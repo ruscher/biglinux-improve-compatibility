@@ -1,0 +1,26 @@
+#!/bin/bash
+# Fix for Warsaw binary that has no section headers
+# execstack doesn't work on such binaries, so we use setarch instead
+# Bug: https://sourceware.org/bugzilla/show_bug.cgi?id=32653
+
+OVERRIDE_DIR="/etc/systemd/system/warsaw.service.d"
+OVERRIDE_FILE="${OVERRIDE_DIR}/fix-glibc241.conf"
+
+# Create override directory if it doesn't exist
+mkdir -p "$OVERRIDE_DIR"
+
+# Create override file with setarch wrapper and forking type
+cat > "$OVERRIDE_FILE" << 'EOF'
+[Service]
+Type=forking
+ExecStart=
+ExecStart=/usr/bin/setarch x86_64 --read-implies-exec /usr/local/bin/warsaw/core
+EOF
+
+# Reload systemd configuration
+systemctl daemon-reload
+
+# Restart warsaw service if it's running
+if systemctl is-active --quiet warsaw; then
+    systemctl restart warsaw
+fi
