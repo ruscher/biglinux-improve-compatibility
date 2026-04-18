@@ -1,9 +1,0 @@
-[Trigger]
-Type = Package
-Operation = Remove
-Target = lact
-
-[Action]
-Description = Auto unconfigure lact after remove
-When = PreTransaction
-Exec = /bin/sh -c 'systemctl disable --now lactd'
