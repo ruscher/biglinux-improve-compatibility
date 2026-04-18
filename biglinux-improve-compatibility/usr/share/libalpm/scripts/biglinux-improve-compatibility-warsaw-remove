@@ -1,0 +1,17 @@
+#!/bin/bash
+# Remove Warsaw glibc 2.41 fix
+
+OVERRIDE_DIR="/etc/systemd/system/warsaw.service.d"
+
+# Stop warsaw service before removing
+if systemctl is-active --quiet warsaw; then
+    systemctl stop warsaw
+fi
+
+# Remove override directory and files
+if [ -d "$OVERRIDE_DIR" ]; then
+    rm -rf "$OVERRIDE_DIR"
+fi
+
+# Reload systemd configuration
+systemctl daemon-reload
