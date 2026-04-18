@@ -1,0 +1,12 @@
+[Trigger]
+Type = Package
+Operation = Install
+Operation = Upgrade
+Target = warsaw
+Target = warsaw-bin
+Target = warsaw-deb
+
+[Action]
+Description = Applying glibc 2.41 fix for Warsaw (setarch)
+When = PostTransaction
+Exec = /usr/share/libalpm/scripts/biglinux-improve-compatibility-warsaw

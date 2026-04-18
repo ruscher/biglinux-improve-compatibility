@@ -1,0 +1,94 @@
+#!/bin/bash
+# Fix for Warsaw binary compatibility issues on glibc 2.41+
+# glibc 2.41 enforces W^X (write XOR execute) which breaks Warsaw libraries
+# that require executable stack (wsbrmu.so).
+# Bug reference: https://sourceware.org/bugzilla/show_bug.cgi?id=32653
+
+set -euo pipefail
+
+OVERRIDE_DIR="/etc/systemd/system/warsaw.service.d"
+OVERRIDE_FILE="${OVERRIDE_DIR}/fix-glibc241.conf"
+CONFLICTING_SERVICE="/etc/systemd/system/warsaw.service"
+
+# Find Warsaw binary location (new version uses /usr/local/bin, old uses /usr/bin)
+WARSAW_BINARY=""
+WARSAW_LIB_DIR=""
+if [[ -f /usr/local/bin/warsaw/core ]]; then
+    WARSAW_BINARY="/usr/local/bin/warsaw/core"
+    WARSAW_LIB_DIR="/usr/local/lib/warsaw"
+elif [[ -f /usr/bin/warsaw/core ]]; then
+    WARSAW_BINARY="/usr/bin/warsaw/core"
+    WARSAW_LIB_DIR="/usr/lib/warsaw"
+fi
+
+# Exit if no Warsaw binary found
+[[ -z "$WARSAW_BINARY" ]] && exit 0
+
+# Remove conflicting service file in /etc/systemd/system if it exists
+# This file can override the correct service from the package
+if [[ -f "$CONFLICTING_SERVICE" ]]; then
+    rm -f "$CONFLICTING_SERVICE"
+fi
+
+# Check if glibc version is 2.41 or higher (which enforces W^X)
+needs_setarch_fix() {
+    local glibc_version
+    glibc_version=$(ldd --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+' | head -1)
+    
+    if [[ -z "$glibc_version" ]]; then
+        return 1
+    fi
+    
+    local major minor
+    major="${glibc_version%%.*}"
+    minor="${glibc_version#*.}"
+    
+    # Need fix for glibc >= 2.41
+    if (( major > 2 )) || (( major == 2 && minor >= 41 )); then
+        # Also verify that at least one Warsaw library needs execstack
+        if [[ -d "$WARSAW_LIB_DIR" ]]; then
+            # Check if any .so file has executable stack requirement
+            for so_file in "$WARSAW_LIB_DIR"/*.so; do
+                [[ -f "$so_file" ]] || continue
+                if readelf -l "$so_file" 2>/dev/null | grep -q "GNU_STACK.*RWE"; then
+                    return 0
+                fi
+            done
+        fi
+        # Fallback: also check if binary itself needs it (old versions)
+        if ! readelf -S "$WARSAW_BINARY" &>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+if needs_setarch_fix; then
+    # Apply setarch fix for glibc 2.41+ compatibility
+    mkdir -p "$OVERRIDE_DIR"
+    
+    cat > "$OVERRIDE_FILE" << EOF
+# Applied by biglinux-improve-compatibility for glibc 2.41+ W^X enforcement
+# Warsaw libraries require executable stack which is blocked by default
+[Service]
+ExecStart=
+ExecStart=/usr/bin/setarch x86_64 --read-implies-exec $WARSAW_BINARY
+EOF
+    
+    echo "Applied glibc 2.41 setarch fix for Warsaw"
+else
+    # Remove any old override if no longer needed
+    if [[ -f "$OVERRIDE_FILE" ]]; then
+        rm -f "$OVERRIDE_FILE"
+        [[ -d "$OVERRIDE_DIR" ]] && rmdir "$OVERRIDE_DIR" 2>/dev/null || true
+        echo "Removed glibc 2.41 fix (no longer needed)"
+    fi
+fi
+
+# Reload systemd configuration
+systemctl daemon-reload
+
+# Restart warsaw service if it's active
+if systemctl is-active --quiet warsaw; then
+    systemctl restart warsaw
+fi

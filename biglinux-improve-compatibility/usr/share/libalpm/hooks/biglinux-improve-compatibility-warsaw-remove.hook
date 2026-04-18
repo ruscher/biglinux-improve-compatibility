@@ -1,0 +1,11 @@
+[Trigger]
+Type = Package
+Operation = Remove
+Target = warsaw
+Target = warsaw-bin
+Target = warsaw-deb
+
+[Action]
+Description = Removing Warsaw glibc 2.41 fix
+When = PreTransaction
+Exec = /usr/share/libalpm/scripts/biglinux-improve-compatibility-warsaw-remove

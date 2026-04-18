@@ -1,0 +1,12 @@
+#!/bin/bash
+# Remove glibc 2.41 fix when Warsaw is uninstalled
+
+OVERRIDE_DIR="/etc/systemd/system/warsaw.service.d"
+OVERRIDE_FILE="${OVERRIDE_DIR}/fix-glibc241.conf"
+
+if [[ -f "$OVERRIDE_FILE" ]]; then
+    rm -f "$OVERRIDE_FILE"
+    [[ -d "$OVERRIDE_DIR" ]] && rmdir "$OVERRIDE_DIR" 2>/dev/null || true
+    systemctl daemon-reload
+    echo "Removed Warsaw glibc 2.41 fix"
+fi
