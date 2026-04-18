@@ -1,26 +1,58 @@
 #!/bin/bash
-# Fix for Warsaw binary that has no section headers
-# execstack doesn't work on such binaries, so we use setarch instead
-# Bug: https://sourceware.org/bugzilla/show_bug.cgi?id=32653
+# Fix for Warsaw binary compatibility issues
+# - Old versions (1.x) have no section headers - execstack doesn't work, use setarch
+# - New versions (2.x) work correctly with proper systemd Type=forking
+# - Remove conflicting service files from /etc/systemd/system/
+# Bug reference: https://sourceware.org/bugzilla/show_bug.cgi?id=32653
 
 OVERRIDE_DIR="/etc/systemd/system/warsaw.service.d"
 OVERRIDE_FILE="${OVERRIDE_DIR}/fix-glibc241.conf"
+CONFLICTING_SERVICE="/etc/systemd/system/warsaw.service"
 
-# Create override directory if it doesn't exist
-mkdir -p "$OVERRIDE_DIR"
+# Find Warsaw binary location (new version uses /usr/local/bin, old uses /usr/bin)
+WARSAW_BINARY=""
+if [[ -f /usr/local/bin/warsaw/core ]]; then
+    WARSAW_BINARY="/usr/local/bin/warsaw/core"
+elif [[ -f /usr/bin/warsaw/core ]]; then
+    WARSAW_BINARY="/usr/bin/warsaw/core"
+fi
 
-# Create override file with setarch wrapper and forking type
-cat > "$OVERRIDE_FILE" << 'EOF'
+# Exit if no Warsaw binary found
+[[ -z "$WARSAW_BINARY" ]] && exit 0
+
+# Remove conflicting service file in /etc/systemd/system if it exists
+# This file can override the correct service from the package
+if [[ -f "$CONFLICTING_SERVICE" ]]; then
+    rm -f "$CONFLICTING_SERVICE"
+fi
+
+# Check if binary has section headers (old version doesn't)
+if ! readelf -S "$WARSAW_BINARY" &>/dev/null; then
+    # Old version without section headers - needs setarch fix
+    mkdir -p "$OVERRIDE_DIR"
+    
+    # Determine correct paths based on installation
+    WSCERTMGR=""
+    if [[ -f /usr/bin/warsaw/wscertmgr ]]; then
+        WSCERTMGR="/usr/bin/warsaw/wscertmgr"
+    fi
+    
+    cat > "$OVERRIDE_FILE" << EOF
 [Service]
 Type=forking
+$(if [[ -n "$WSCERTMGR" ]]; then echo "ExecStartPre="; echo "ExecStartPre=/usr/bin/setarch x86_64 --read-implies-exec $WSCERTMGR"; fi)
 ExecStart=
-ExecStart=/usr/bin/setarch x86_64 --read-implies-exec /usr/local/bin/warsaw/core
+ExecStart=/usr/bin/setarch x86_64 --read-implies-exec $WARSAW_BINARY
 EOF
+else
+    # New version works correctly - remove any old override
+    [[ -d "$OVERRIDE_DIR" ]] && rm -rf "$OVERRIDE_DIR"
+fi
 
 # Reload systemd configuration
 systemctl daemon-reload
 
-# Restart warsaw service if it's running
+# Restart warsaw service if it's active
 if systemctl is-active --quiet warsaw; then
     systemctl restart warsaw
 fi
