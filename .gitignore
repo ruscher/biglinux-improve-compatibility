@@ -1,0 +1,9 @@
+# makepkg build artifacts
+pkgbuild/src/
+pkgbuild/pkg/
+pkgbuild/*.pkg.tar
+pkgbuild/*.pkg.tar.*
+pkgbuild/*.tar.zst
+pkgbuild/*.tar.xz
+pkgbuild/*.tar.gz
+pkgbuild/biglinux-improve-compatibility/
